@@ -1,0 +1,27 @@
+# Copiar a /etc/systemd/system/mqtt-agrohub.service, ajustar las rutas si el checkout queda en
+# otro lugar, y luego:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mqtt-agrohub
+#
+# No es el broker (Mosquitto trae su propio unit al instalarse por apt) — este es solo el
+# servicio Python que persiste los datos y mantiene el latido de nube.
+
+[Unit]
+Description=mqtt_agrohub — persister MQTT AgroHub / IoT Unimagdalena
+After=network-online.target mosquitto.service docker.service
+Wants=network-online.target
+Requires=mosquitto.service
+
+[Service]
+Type=simple
+User=hubambiental002
+WorkingDirectory=/home/hubambiental002/backend_stacks/mqtt_agrohub
+EnvironmentFile=/home/hubambiental002/backend_stacks/mqtt_agrohub/.env
+ExecStart=/home/hubambiental002/backend_stacks/mqtt_agrohub/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/hubambiental002/backend_stacks/mqtt_agrohub/service.log
+StandardError=append:/home/hubambiental002/backend_stacks/mqtt_agrohub/service-error.log
+
+[Install]
+WantedBy=multi-user.target

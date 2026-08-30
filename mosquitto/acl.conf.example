@@ -1,0 +1,34 @@
+# Ejemplo de ACL — copiar a /etc/mosquitto/acl.conf y reemplazar con los gateways reales.
+# Generar cada credencial con: mosquitto_passwd -b /etc/mosquitto/passwd <usuario> <password>
+#
+# Un gateway solo puede tocar SU PROPIO namespace (ver docs/TOPICS.md para el porqué de cada
+# permiso) — nunca un "topic readwrite ahub/#" genérico, eso dejaría a un gateway leer o
+# suplantar a otro.
+
+# --- Gateway AgroHub #1 (ejemplo: device0001, Client ID ug56-agrohub1) ---
+user ug56-agrohub1
+topic write ahub/device0001/data
+topic write ahub/device0001/valvulas/state
+topic write ahub/device0001/health
+topic write ahub/device0001/status
+topic read  ahub/device0001/control/valvulas
+topic read  iotunimagdalena/cloud/health
+
+# --- Gateway AgroHub #2 (duplicar este bloque por cada gateway nuevo, con su propio device_id) ---
+user ug56-agrohub2
+topic write ahub/device0002/data
+topic write ahub/device0002/valvulas/state
+topic write ahub/device0002/health
+topic write ahub/device0002/status
+topic read  ahub/device0002/control/valvulas
+topic read  iotunimagdalena/cloud/health
+
+# --- Nuestro servicio persister (mqtt_agrohub) ---
+# Necesita leer TODOS los gateways AgroHub (comodín +) y publicar comandos + el latido de nube.
+user iotunimagdalena-persister
+topic read  ahub/+/data
+topic read  ahub/+/valvulas/state
+topic read  ahub/+/health
+topic read  ahub/+/status
+topic write ahub/+/control/valvulas
+topic write iotunimagdalena/cloud/health
