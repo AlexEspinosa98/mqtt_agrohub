@@ -65,6 +65,7 @@ docker-compose.yml      Postgres para este servicio (mismo patrón que backed_al
 mosquitto/               config del broker para producción
   mosquitto.conf
   acl.conf.example
+  certbot-deploy-hook.sh  reusa el cert de back.alunaia.co, sin pedir subdominio nuevo
 systemd/
   mqtt-agrohub.service   unit file del servicio Python (no el broker — Mosquitto trae el suyo)
 docs/
@@ -100,12 +101,11 @@ solo la primera vez que crea el volumen. Si cambias el esquema después, aplíca
    pieza que debe sostener miles de conexiones 24/7 y conviene tenerla como servicio systemd
    nativo, igual que Postgres via Docker pero Mosquitto no lo justifica (no necesita
    aislamiento, sí necesita máximo rendimiento de red). Reemplazar
-   `/etc/mosquitto/mosquitto.conf` por `mosquitto/mosquitto.conf` (ajustando rutas de
-   certificado), generar credenciales por gateway con
-   `mosquitto_passwd -b /etc/mosquitto/passwd <usuario> <password>`, copiar
-   `mosquitto/acl.conf.example` a `/etc/mosquitto/acl.conf` con un bloque por gateway real.
-   Requiere un certificado TLS (Let's Encrypt) para un subdominio propio — ver nota de
-   seguridad más abajo.
+   `/etc/mosquitto/mosquitto.conf` por `mosquitto/mosquitto.conf`, generar credenciales por
+   gateway con `mosquitto_passwd -b /etc/mosquitto/passwd <usuario> <password>`, copiar
+   `mosquitto/acl.conf.example` a `/etc/mosquitto/acl.conf` con un bloque por gateway real, e
+   instalar `mosquitto/certbot-deploy-hook.sh` (ver ese archivo para el paso a paso) — **no hace
+   falta pedir un subdominio nuevo**, ver la nota siguiente.
 3. **Puerto 8883**: debe abrirse en el firewall del sistema operativo y, si aplica, en el
    firewall/security group del proveedor de hosting — **pendiente de confirmar**, no se pudo
    verificar por SSH sin acceso root.
@@ -113,6 +113,25 @@ solo la primera vez que crea el volumen. Si cambias el esquema después, aplíca
    `.env` (nunca commiteado, con `DATABASE_URL` apuntando al Postgres de Docker del paso 1), y
    el unit file de `systemd/mqtt-agrohub.service` — mismo patrón que los otros backends del
    servidor (`aluna-kunsama-backend`, etc.): `Restart=always`, logs propios.
+
+### Por qué no hace falta pedir un subdominio nuevo
+
+MQTT (incluso sobre TLS, puerto 8883) es un protocolo TCP crudo, no HTTP — no tiene "rutas" como
+`/mqtt`, así que no se puede enrutar por path detrás de nginx como sí se hace con
+`/api/aluna-kunsama/` para los backends Django/FastAPI. Nginx no interviene en absoluto: Mosquitto
+escucha directo en el puerto 8883 del servidor.
+
+En vez de tramitar un subdominio nuevo (`mqtt.alunaia.co` o similar) solo para tener dónde colgar
+un certificado, **reutiliza el dominio y el certificado que ya existen** (`back.alunaia.co`) — los
+gateways se conectan a `back.alunaia.co:8883` en vez de a un subdominio nuevo. El único detalle es
+de permisos, no de DNS: Let's Encrypt guarda el certificado donde solo root puede leerlo, y
+Mosquitto corre con su propio usuario del sistema — `mosquitto/certbot-deploy-hook.sh` resuelve
+eso copiando el certificado a un sitio que Mosquitto sí puede leer, y recargándolo, cada vez que
+certbot renueva (automático, sin volver a tocarlo).
+
+Si en el futuro conviene separar el tráfico MQTT del HTTP en un hostname propio (por ejemplo, para
+poder mover el broker a otro servidor sin coordinar con los demás backends), ahí sí valdría la
+pena pedir el subdominio — pero no es necesario para arrancar.
 
 ### Nota de seguridad — internet público, múltiples sistemas IoT
 
