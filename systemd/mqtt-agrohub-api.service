@@ -1,0 +1,31 @@
+# API de administración (FastAPI) — servicio HTTP separado del daemon de ingesta
+# (mqtt-agrohub.service). Copiar a /etc/systemd/system/mqtt-agrohub-api.service:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mqtt-agrohub-api
+#
+# No queda expuesta a internet por sí sola — escucha en 127.0.0.1:8005 (ver API_HOST/API_PORT
+# en .env). Para acceder desde fuera del servidor hace falta agregar un location a nginx
+# apuntando a ese puerto (mismo patrón que /api/aluna-kunsama/, /api/agrohub/, etc. — no incluido
+# aquí porque tocar la config de nginx compartida es una decisión aparte, ver README).
+
+[Unit]
+Description=mqtt_agrohub API — administración de gateways y dashboard
+After=network-online.target mosquitto.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hubambiental002
+WorkingDirectory=/home/hubambiental002/backend_stacks/mqtt_agrohub
+EnvironmentFile=/home/hubambiental002/backend_stacks/mqtt_agrohub/.env
+# Host/puerto van fijos aquí (no via ${API_HOST}/${API_PORT}) para no depender de la expansión
+# de variables de systemd en ExecStart — si cambias API_HOST/API_PORT en .env, actualiza también
+# esta línea para que coincidan.
+ExecStart=/home/hubambiental002/backend_stacks/mqtt_agrohub/venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8005
+Restart=always
+RestartSec=5
+StandardOutput=append:/home/hubambiental002/backend_stacks/mqtt_agrohub/api.log
+StandardError=append:/home/hubambiental002/backend_stacks/mqtt_agrohub/api-error.log
+
+[Install]
+WantedBy=multi-user.target

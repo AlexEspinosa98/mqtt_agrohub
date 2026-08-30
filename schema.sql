@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS dispositivos (
     device_id           TEXT PRIMARY KEY,          -- ej. 'device0001'
     base_topic          TEXT NOT NULL,              -- ej. 'ahub/device0001'
+    client_id            TEXT UNIQUE,                -- usuario/Client ID en Mosquitto, ej. 'ug56-agrohub1'
     nombre               TEXT,
     activo               BOOLEAN NOT NULL DEFAULT TRUE,
     primera_vez_visto    TIMESTAMPTZ NOT NULL DEFAULT now(),

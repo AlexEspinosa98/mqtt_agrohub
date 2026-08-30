@@ -50,25 +50,36 @@ advertencia explícita del manual, sección 09).
 ## Estructura
 
 ```
-mqtt_agrohub/           paquete Python del servicio
+mqtt_agrohub/           paquete Python compartido (lo usan tanto el daemon de ingesta como la API)
   config.py             configuración desde variables de entorno
-  db.py                 conexión a Postgres (psycopg2) y helpers de upsert
+  db.py                 conexión a Postgres (psycopg2), inserts de la ingesta + queries de la API
   topics.py             parseo de tópicos ahub/<device_id>/<resto>
   handlers.py           qué hacer con cada tipo de mensaje (data/valvulas/health/status)
   heartbeat.py          hilo que publica iotunimagdalena/cloud/health cada 60s
   commands.py           enviar_comando_valvula(device_id, valvula, accion) — para quien
                          necesite mandar comandos (otro servicio, un script, etc.)
   client.py             arma el cliente MQTT, conecta, suscribe, arranca el heartbeat
-main.py                 punto de entrada — python main.py
+  mosquitto_admin.py     crea/elimina/rota credenciales de gateways — usado por la API
+main.py                 punto de entrada del daemon de ingesta — python main.py
+api/                    API de administración (FastAPI) — servicio HTTP aparte, ver más abajo
+  main.py               arma la app, monta los routers
+  auth.py               autenticación por API key (header X-API-Key)
+  schemas.py             modelos de request/response
+  routers/
+    dispositivos.py      alta/baja/rotar contraseña de gateways
+    dashboard.py          última lectura, histórico, estado de conexión por dispositivo
 schema.sql              esquema de las tablas en Postgres (auto-aplicado por docker-compose)
+migrations/              cambios de esquema para bases ya provisionadas (sin framework, a mano)
 docker-compose.yml      Postgres para este servicio (mismo patrón que backed_aluna_kunsama)
 mosquitto/               config del broker para producción
   mosquitto.conf
   acl.conf.example
-  agregar_gateway.sh      da de alta un gateway nuevo: credencial + ACL + recarga, un comando
+  agregar_gateway.sh      da de alta un gateway por SSH: credencial + ACL + recarga, un comando
+                          (la API hace lo mismo por HTTP — usar el que sea más cómodo)
   certbot-deploy-hook.sh  reusa el cert de back.alunaia.co, sin pedir subdominio nuevo
 systemd/
-  mqtt-agrohub.service   unit file del servicio Python (no el broker — Mosquitto trae el suyo)
+  mqtt-agrohub.service       unit file del daemon de ingesta (no el broker, Mosquitto trae el suyo)
+  mqtt-agrohub-api.service   unit file de la API de administración
 docs/
   TOPICS.md              referencia rápida de tópicos y payloads (extraída del manual)
 .env.example
@@ -110,10 +121,61 @@ solo la primera vez que crea el volumen. Si cambias el esquema después, aplíca
 3. **Puerto 8883**: debe abrirse en el firewall del sistema operativo y, si aplica, en el
    firewall/security group del proveedor de hosting — **pendiente de confirmar**, no se pudo
    verificar por SSH sin acceso root.
-4. **Este servicio**: `venv` + `pip install -r requirements.txt`, variables de entorno reales en
+4. **Daemon de ingesta**: `venv` + `pip install -r requirements.txt`, variables de entorno reales en
    `.env` (nunca commiteado, con `DATABASE_URL` apuntando al Postgres de Docker del paso 1), y
    el unit file de `systemd/mqtt-agrohub.service` — mismo patrón que los otros backends del
    servidor (`aluna-kunsama-backend`, etc.): `Restart=always`, logs propios.
+5. **API de administración**: ver la sección siguiente — necesita un paso de seguridad adicional
+   (permisos + sudoers) antes de poder crear/eliminar/rotar credenciales de gateways.
+
+## API de administración
+
+Servicio HTTP aparte (`api/`, uvicorn en `127.0.0.1:8005`, `systemd/mqtt-agrohub-api.service`) —
+alta/baja/rotación de gateways y dashboard de telemetría, para no tener que hacerlo por SSH con
+`mosquitto/agregar_gateway.sh` cada vez. Documentación interactiva automática en `/docs` (Swagger)
+una vez arriba.
+
+Toda ruta requiere el header `X-API-Key: <ADMIN_API_KEY>` (generar con `openssl rand -hex 32` y
+ponerlo en `.env` — es la única credencial de esta API, pensada para un puñado de operadores
+internos, no para usuarios finales).
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `GET` | `/dispositivos` | Lista todos los gateways (`?solo_activos=true` para filtrar) |
+| `POST` | `/dispositivos` | Da de alta uno nuevo — `{"device_id": "device0017", "client_id": "ug56-agrohub17", "nombre": "..."}`. Crea la credencial en Mosquitto y devuelve la contraseña **una sola vez** |
+| `DELETE` | `/dispositivos/{device_id}` | Revoca su acceso al broker de inmediato y lo marca inactivo (sus lecturas históricas NO se borran) |
+| `POST` | `/dispositivos/{device_id}/rotar-password` | Genera una contraseña nueva para ese gateway — la anterior deja de servir |
+| `GET` | `/dashboard/resumen` | Todos los gateways activos con su último dato de cada tipo (ambiente, suelo, válvulas, health, en línea/fuera de línea) |
+| `GET` | `/dashboard/{device_id}` | Lo mismo, para un solo gateway |
+| `GET` | `/dashboard/{device_id}/lecturas/ambiente` | Histórico (`?desde=&hasta=&limite=`, por defecto últimos 7 días) |
+| `GET` | `/dashboard/{device_id}/lecturas/suelo` | Igual, para lecturas de suelo |
+
+### Permisos que necesita — leer antes de arrancar el servicio
+
+La API edita `/etc/mosquitto/passwd` y `/etc/mosquitto/acl.conf`, y necesita recargar Mosquitto
+después de cada cambio. Esto es una **decisión de seguridad real** — dejo los comandos listos
+pero no los corro yo (necesitan tu sudo):
+
+```bash
+# 1. Permiso de escritura de grupo sobre los dos archivos que la API edita.
+sudo groupadd -f mosquitto-admin
+sudo usermod -aG mosquitto-admin hubambiental002
+sudo chgrp mosquitto-admin /etc/mosquitto/passwd /etc/mosquitto/acl.conf
+sudo chmod 660 /etc/mosquitto/passwd /etc/mosquitto/acl.conf   # sin lectura para "otros" —
+    # Mosquitto avisa (y en versiones futuras rechaza cargar) un passwd file world-readable
+
+# 2. Regla de sudoers ACOTADA a un solo comando — la API la usa para que Mosquitto tome los
+#    cambios sin reiniciar el broker entero. No es sudo general: solo permite ESE comando exacto.
+echo 'hubambiental002 ALL=(root) NOPASSWD: /bin/systemctl reload mosquitto' | sudo tee /etc/sudoers.d/mqtt-agrohub-api
+sudo chmod 440 /etc/sudoers.d/mqtt-agrohub-api
+sudo visudo -c   # valida la sintaxis antes de confiar en el archivo
+
+# 3. Cerrar sesión y volver a entrar por SSH para que el nuevo grupo tome efecto, o:
+newgrp mosquitto-admin
+```
+
+Sin el paso 2, todo lo demás funciona pero cada `POST`/`DELETE`/rotar-password deja el cambio
+escrito en disco y responde `502` — Mosquitto no lo toma hasta un reinicio manual.
 
 ### Por qué no hace falta pedir un subdominio nuevo
 

@@ -36,3 +36,13 @@ TOPICS_SUSCRIPCION = [
     'ahub/+/health',
     'ahub/+/status',
 ]
+
+# --- API de administración (ver api/) ---
+ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY')
+API_HOST = os.environ.get('API_HOST', '127.0.0.1')
+API_PORT = int(os.environ.get('API_PORT', '8005'))
+
+# Rutas de los archivos de Mosquitto que la API edita al crear/eliminar/rotar credenciales —
+# ver mosquitto_admin.py y README ("API de administración") para los permisos que necesita.
+MOSQUITTO_PASSWD_FILE = os.environ.get('MOSQUITTO_PASSWD_FILE', '/etc/mosquitto/passwd')
+MOSQUITTO_ACL_FILE = os.environ.get('MOSQUITTO_ACL_FILE', '/etc/mosquitto/acl.conf')
