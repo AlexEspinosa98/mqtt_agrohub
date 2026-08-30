@@ -130,7 +130,7 @@ solo la primera vez que crea el volumen. Si cambias el esquema después, aplíca
 
 ## API de administración
 
-Servicio HTTP aparte (`api/`, uvicorn en `127.0.0.1:8005`, `systemd/mqtt-agrohub-api.service`) —
+Servicio HTTP aparte (`api/`, uvicorn en `127.0.0.1:8006`, `systemd/mqtt-agrohub-api.service`) —
 alta/baja/rotación de gateways y dashboard de telemetría, para no tener que hacerlo por SSH con
 `mosquitto/agregar_gateway.sh` cada vez. Documentación interactiva automática en `/docs` (Swagger)
 una vez arriba.
