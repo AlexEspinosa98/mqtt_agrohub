@@ -1,27 +1,20 @@
-# Ejemplo de ACL — copiar a /etc/mosquitto/acl.conf y reemplazar con los gateways reales.
-# Generar cada credencial con: mosquitto_passwd -b /etc/mosquitto/passwd <usuario> <password>
+# Copiar a /etc/mosquitto/acl.conf — este archivo de ejemplo solo trae el bloque de nuestro
+# propio servicio (mqtt_agrohub). Los gateways reales se agregan uno por uno con
+# mosquitto/agregar_gateway.sh (genera credencial + bloque de ACL + recarga el broker en un solo
+# comando) — no hace falta editar este archivo a mano para eso.
 #
 # Un gateway solo puede tocar SU PROPIO namespace (ver docs/TOPICS.md para el porqué de cada
 # permiso) — nunca un "topic readwrite ahub/#" genérico, eso dejaría a un gateway leer o
-# suplantar a otro.
-
-# --- Gateway AgroHub #1 (ejemplo: device0001, Client ID ug56-agrohub1) ---
-user ug56-agrohub1
-topic write ahub/device0001/data
-topic write ahub/device0001/valvulas/state
-topic write ahub/device0001/health
-topic write ahub/device0001/status
-topic read  ahub/device0001/control/valvulas
-topic read  iotunimagdalena/cloud/health
-
-# --- Gateway AgroHub #2 (duplicar este bloque por cada gateway nuevo, con su propio device_id) ---
-user ug56-agrohub2
-topic write ahub/device0002/data
-topic write ahub/device0002/valvulas/state
-topic write ahub/device0002/health
-topic write ahub/device0002/status
-topic read  ahub/device0002/control/valvulas
-topic read  iotunimagdalena/cloud/health
+# suplantar a otro. Así queda el bloque que agregar_gateway.sh escribe para cada uno (ejemplo,
+# no lo escribas a mano salvo que el script no esté disponible):
+#
+#   user ug56-agrohub1
+#   topic write ahub/device0001/data
+#   topic write ahub/device0001/valvulas/state
+#   topic write ahub/device0001/health
+#   topic write ahub/device0001/status
+#   topic read  ahub/device0001/control/valvulas
+#   topic read  iotunimagdalena/cloud/health
 
 # --- Nuestro servicio persister (mqtt_agrohub) ---
 # Necesita leer TODOS los gateways AgroHub (comodín +) y publicar comandos + el latido de nube.

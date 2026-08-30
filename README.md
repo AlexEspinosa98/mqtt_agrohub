@@ -65,6 +65,7 @@ docker-compose.yml      Postgres para este servicio (mismo patrón que backed_al
 mosquitto/               config del broker para producción
   mosquitto.conf
   acl.conf.example
+  agregar_gateway.sh      da de alta un gateway nuevo: credencial + ACL + recarga, un comando
   certbot-deploy-hook.sh  reusa el cert de back.alunaia.co, sin pedir subdominio nuevo
 systemd/
   mqtt-agrohub.service   unit file del servicio Python (no el broker — Mosquitto trae el suyo)
@@ -132,6 +133,26 @@ certbot renueva (automático, sin volver a tocarlo).
 Si en el futuro conviene separar el tráfico MQTT del HTTP en un hostname propio (por ejemplo, para
 poder mover el broker a otro servidor sin coordinar con los demás backends), ahí sí valdría la
 pena pedir el subdominio — pero no es necesario para arrancar.
+
+### Agregar un gateway AgroHub nuevo
+
+Instalar Mosquitto y arrancar este servicio deja el broker funcionando, pero **sin ningún
+gateway dado de alta** — solo existe el usuario de nuestro propio servicio
+(`iotunimagdalena-persister`). Cada gateway físico necesita su propia credencial y su propio
+bloque de ACL (ver la nota de seguridad más abajo — nunca un usuario compartido).
+
+```bash
+sudo mosquitto/agregar_gateway.sh ug56-agrohub3 device0003
+```
+
+Un solo comando: genera la contraseña, crea el usuario en `/etc/mosquitto/passwd`, agrega su
+bloque de ACL en `/etc/mosquitto/acl.conf`, recarga Mosquitto, e imprime exactamente qué poner
+en el gateway. Ese último paso — configurar el gateway — **pasa del otro lado, en el propio
+UG56** (su UI web → Node-RED → nodo "Servidor MQTT" y nodo "Config inicial", ver manual secciones
+03 y 05): ahí es donde se ingresan el host (`back.alunaia.co`), el puerto (`8883`), el
+usuario/contraseña que acaba de imprimir el script, y el `device_id`/`baseTopic`. Ese paso no se
+puede hacer desde este servidor — lo hace quien tenga acceso a la interfaz de ese gateway físico
+(instalador de campo o el administrador del proyecto, ver manual sección 02 "Roles de usuario").
 
 ### Nota de seguridad — internet público, múltiples sistemas IoT
 
