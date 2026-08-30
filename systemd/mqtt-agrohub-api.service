@@ -4,9 +4,10 @@
 #   sudo systemctl enable --now mqtt-agrohub-api
 #
 # No queda expuesta a internet por sí sola — escucha en 127.0.0.1:8006 (ver API_HOST/API_PORT
-# en .env). Para acceder desde fuera del servidor hace falta agregar un location a nginx
-# apuntando a ese puerto (mismo patrón que /api/aluna-kunsama/, /api/agrohub/, etc. — no incluido
-# aquí porque tocar la config de nginx compartida es una decisión aparte, ver README).
+# en .env). Queda pública detrás de nginx en /api/agrohub-mqtt/ — mismo patrón que
+# /api/aluna-kunsama/, /api/cienared/, etc. (ver README, sección "Exponer la API por nginx",
+# y el --root-path de abajo, que hace que los links de /docs y el OpenAPI generado apunten al
+# prefijo correcto detrás del proxy — mismo truco que ya usa CienaNet en este servidor).
 
 [Unit]
 Description=mqtt_agrohub API — administración de gateways y dashboard
@@ -21,7 +22,7 @@ EnvironmentFile=/home/hubambiental002/backend_stacks/mqtt_agrohub/.env
 # Host/puerto van fijos aquí (no via ${API_HOST}/${API_PORT}) para no depender de la expansión
 # de variables de systemd en ExecStart — si cambias API_HOST/API_PORT en .env, actualiza también
 # esta línea para que coincidan.
-ExecStart=/home/hubambiental002/backend_stacks/mqtt_agrohub/venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8006
+ExecStart=/home/hubambiental002/backend_stacks/mqtt_agrohub/venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8006 --root-path /api/agrohub-mqtt
 Restart=always
 RestartSec=5
 StandardOutput=append:/home/hubambiental002/backend_stacks/mqtt_agrohub/api.log

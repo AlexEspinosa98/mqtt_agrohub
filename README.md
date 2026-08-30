@@ -177,6 +177,47 @@ newgrp mosquitto-admin
 Sin el paso 2, todo lo demás funciona pero cada `POST`/`DELETE`/rotar-password deja el cambio
 escrito en disco y responde `502` — Mosquitto no lo toma hasta un reinicio manual.
 
+### Exponer la API por nginx
+
+Por defecto la API solo escucha en `127.0.0.1:8006` — nadie fuera del servidor puede llamarla.
+Para que quede alcanzable como los demás backends (`https://back.alunaia.co/api/agrohub-mqtt/...`),
+agregar un `location` más al mismo archivo de nginx donde ya conviven `/api/agrohub/`,
+`/api/agrohub-rs/`, `/api/aluna/`, `/api/cienared/` y `/api/aluna-kunsama/` — **no es una decisión
+de mezclar código con ninguno de esos backends**, nginx no le importa qué corre detrás de cada
+puerto, solo agrega una entrada más a la misma lista. Esto necesita tu sudo (edita
+`/etc/nginx/sites-available/backend`, compartido por todos los backends del servidor):
+
+```nginx
+# --- mqtt_agrohub (gateways de riego + dashboard) ---
+location /api/agrohub-mqtt/ {
+    proxy_pass http://127.0.0.1:8006/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+    proxy_connect_timeout 10s;
+}
+```
+
+Agregar este bloque **dos veces** — dentro del `server` de `listen 80 default_server` (acceso
+directo por IP) y dentro del `server` de `listen 443 ssl; server_name back.alunaia.co;` (el que
+importa de verdad, con TLS) — mismo patrón que ya siguen los otros cinco. Después:
+
+```bash
+sudo nginx -t   # valida la sintaxis antes de recargar
+sudo systemctl reload nginx
+```
+
+El `--root-path /api/agrohub-mqtt` que ya trae `systemd/mqtt-agrohub-api.service` (mismo truco que
+usa CienaNet con `/api/cienared`) hace que `/docs` y el JSON de OpenAPI que genera FastAPI
+funcionen bien detrás de ese prefijo — sin eso, la documentación cargaría pero los links y
+ejemplos de la UI de Swagger apuntarían a rutas rotas.
+
+Una vez recargado nginx, la API completa queda en `https://back.alunaia.co/api/agrohub-mqtt/` —
+mismo header `X-API-Key` de siempre, y `https://back.alunaia.co/api/agrohub-mqtt/docs` para la
+documentación interactiva.
+
 ### Por qué no hace falta pedir un subdominio nuevo
 
 MQTT (incluso sobre TLS, puerto 8883) es un protocolo TCP crudo, no HTTP — no tiene "rutas" como
