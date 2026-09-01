@@ -27,9 +27,13 @@ def _bloque_acl(client_id, device_id):
         f"\n# --- {client_id} ({device_id}) ---\n"
         f"user {client_id}\n"
         f"topic write ahub/{device_id}/data\n"
+        f"topic read  ahub/{device_id}/data\n"
         f"topic write ahub/{device_id}/valvulas/state\n"
+        f"topic read  ahub/{device_id}/valvulas/state\n"
         f"topic write ahub/{device_id}/health\n"
+        f"topic read  ahub/{device_id}/health\n"
         f"topic write ahub/{device_id}/status\n"
+        f"topic read  ahub/{device_id}/status\n"
         f"topic read  ahub/{device_id}/control/valvulas\n"
         f"topic read  iotunimagdalena/cloud/health\n"
     )

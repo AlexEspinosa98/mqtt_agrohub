@@ -30,9 +30,13 @@ cat >> "$ACL_FILE" << EOF
 # --- ${CLIENT_ID} (${DEVICE_ID}) ---
 user ${CLIENT_ID}
 topic write ahub/${DEVICE_ID}/data
+topic read  ahub/${DEVICE_ID}/data
 topic write ahub/${DEVICE_ID}/valvulas/state
+topic read  ahub/${DEVICE_ID}/valvulas/state
 topic write ahub/${DEVICE_ID}/health
+topic read  ahub/${DEVICE_ID}/health
 topic write ahub/${DEVICE_ID}/status
+topic read  ahub/${DEVICE_ID}/status
 topic read  ahub/${DEVICE_ID}/control/valvulas
 topic read  iotunimagdalena/cloud/health
 EOF

@@ -5,14 +5,20 @@
 #
 # Un gateway solo puede tocar SU PROPIO namespace (ver docs/TOPICS.md para el porqué de cada
 # permiso) — nunca un "topic readwrite ahub/#" genérico, eso dejaría a un gateway leer o
-# suplantar a otro. Así queda el bloque que agregar_gateway.sh escribe para cada uno (ejemplo,
+# suplantar a otro. Sí puede leer sus propios tópicos de salida (data/valvulas/health/status) —
+# eso no cruza el aislamiento entre dispositivos, solo le permite verse a sí mismo (útil para
+# pruebas manuales con mosquitto_sub). Así queda el bloque que agregar_gateway.sh escribe para cada uno (ejemplo,
 # no lo escribas a mano salvo que el script no esté disponible):
 #
 #   user ug56-agrohub1
 #   topic write ahub/device0001/data
+#   topic read  ahub/device0001/data
 #   topic write ahub/device0001/valvulas/state
+#   topic read  ahub/device0001/valvulas/state
 #   topic write ahub/device0001/health
+#   topic read  ahub/device0001/health
 #   topic write ahub/device0001/status
+#   topic read  ahub/device0001/status
 #   topic read  ahub/device0001/control/valvulas
 #   topic read  iotunimagdalena/cloud/health
 
