@@ -160,9 +160,19 @@ pero no los corro yo (necesitan tu sudo):
 # 1. Permiso de escritura de grupo sobre los dos archivos que la API edita.
 sudo groupadd -f mosquitto-admin
 sudo usermod -aG mosquitto-admin hubambiental002
+# El propio proceso de Mosquitto (usuario 'mosquitto') TAMBIÉN necesita estar en el grupo —
+# si se omite esto, Mosquitto sigue funcionando mientras tenga el archivo ya abierto, pero en
+# el próximo restart real no puede reabrir su propio passwd file y no arranca (nos pasó:
+# "Error: Unable to open pwfile", servicio caído hasta agregar esto).
+sudo usermod -aG mosquitto-admin mosquitto
 sudo chgrp mosquitto-admin /etc/mosquitto/passwd /etc/mosquitto/acl.conf
 sudo chmod 660 /etc/mosquitto/passwd /etc/mosquitto/acl.conf   # sin lectura para "otros" —
     # Mosquitto avisa (y en versiones futuras rechaza cargar) un passwd file world-readable
+# mosquitto_passwd escribe primero un archivo temporal (passwd.tmp) en el mismo directorio y
+# luego lo renombra sobre el original — sin permiso de escritura en el DIRECTORIO (no solo en
+# el archivo), falla con "Error creating backup password file".
+sudo chgrp mosquitto-admin /etc/mosquitto
+sudo chmod g+w /etc/mosquitto
 
 # 2. Regla de sudoers ACOTADA a un solo comando — la API la usa para que Mosquitto tome los
 #    cambios sin reiniciar el broker entero. No es sudo general: solo permite ESE comando exacto.
@@ -170,7 +180,9 @@ echo 'hubambiental002 ALL=(root) NOPASSWD: /bin/systemctl reload mosquitto' | su
 sudo chmod 440 /etc/sudoers.d/mqtt-agrohub-api
 sudo visudo -c   # valida la sintaxis antes de confiar en el archivo
 
-# 3. Cerrar sesión y volver a entrar por SSH para que el nuevo grupo tome efecto, o:
+# 3. Cerrar sesión y volver a entrar por SSH para que el nuevo grupo tome efecto (para
+#    hubambiental002 — mosquitto y agrohub-backend son servicios systemd, ya lo recogen en su
+#    próximo restart sin necesitar esto), o:
 newgrp mosquitto-admin
 ```
 
