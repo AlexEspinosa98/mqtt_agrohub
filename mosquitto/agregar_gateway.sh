@@ -10,11 +10,13 @@
 # device_id: el mismo device00xx que se configura en el nodo "Config inicial" del gateway
 #            (baseTopic=ahub/<device_id>) — deben coincidir siempre, ver manual sección 05 Paso 2.
 #
-# ahub/+/control/valvulas, ahub/+/config/set y ahub/+/cloud/health se suscriben con COMODÍN
-# (todos los gateways ven los comandos/latido de TODOS los dispositivos, no solo el suyo) --
-# decisión de producto confirmada, no un descuido: el firmware filtra por su propio device_id
-# dentro del payload antes de actuar. Sigue siendo cierto para el resto (data/valvulas-state/
-# health/status) que cada gateway solo puede ESCRIBIR en su propio namespace.
+# Cada gateway puede LEER sus propios tópicos de salida (data/valvulas/config/health/status) --
+# no cruza el aislamiento entre dispositivos, solo le permite verse a sí mismo (útil para
+# pruebas manuales con mosquitto_sub). ahub/+/control/valvulas, ahub/+/config/set y
+# ahub/+/cloud/health, en cambio, se suscriben con COMODÍN real (todos los gateways ven los
+# comandos/latido de TODOS los dispositivos, no solo el suyo) -- decisión de producto
+# confirmada, no un descuido: el firmware filtra por su propio device_id dentro del payload
+# antes de actuar.
 
 set -euo pipefail
 
@@ -36,10 +38,15 @@ cat >> "$ACL_FILE" << EOF
 # --- ${CLIENT_ID} (${DEVICE_ID}) ---
 user ${CLIENT_ID}
 topic write ahub/${DEVICE_ID}/data
+topic read  ahub/${DEVICE_ID}/data
 topic write ahub/${DEVICE_ID}/valvulas/state
+topic read  ahub/${DEVICE_ID}/valvulas/state
 topic write ahub/${DEVICE_ID}/config/state
+topic read  ahub/${DEVICE_ID}/config/state
 topic write ahub/${DEVICE_ID}/health
+topic read  ahub/${DEVICE_ID}/health
 topic write ahub/${DEVICE_ID}/status
+topic read  ahub/${DEVICE_ID}/status
 topic read  ahub/+/control/valvulas
 topic read  ahub/+/config/set
 topic read  ahub/+/cloud/health

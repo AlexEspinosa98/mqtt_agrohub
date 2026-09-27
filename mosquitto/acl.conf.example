@@ -3,20 +3,28 @@
 # mosquitto/agregar_gateway.sh (genera credencial + bloque de ACL + recarga el broker en un solo
 # comando) — no hace falta editar este archivo a mano para eso.
 #
-# Un gateway solo puede ESCRIBIR en SU PROPIO namespace (ver docs/TOPICS.md para el porqué de
-# cada permiso) -- eso no cambió. Lo que sí es comodín a propósito (decisión de producto, no un
-# descuido) es la LECTURA de los tres tópicos de comando/latido: cada gateway se suscribe a
-# ahub/+/control/valvulas, ahub/+/config/set y ahub/+/cloud/health y ve los de TODOS los
-# dispositivos, no solo el suyo -- el firmware filtra por su propio device_id dentro del
-# payload antes de actuar. Así queda el bloque que agregar_gateway.sh escribe para cada uno
-# (ejemplo, no lo escribas a mano salvo que el script no esté disponible):
+# Un gateway solo puede tocar SU PROPIO namespace (ver docs/TOPICS.md para el porqué de cada
+# permiso) — nunca un "topic readwrite ahub/#" genérico, eso dejaría a un gateway leer o
+# suplantar a otro. Sí puede leer sus propios tópicos de salida (data/valvulas/config/health/
+# status) — eso no cruza el aislamiento entre dispositivos, solo le permite verse a sí mismo
+# (útil para pruebas manuales con mosquitto_sub). Lo que SÍ es comodín real a propósito
+# (decisión de producto, no un descuido) es la LECTURA de los tres tópicos de comando/latido:
+# cada gateway se suscribe a ahub/+/control/valvulas, ahub/+/config/set y ahub/+/cloud/health y
+# ve los de TODOS los dispositivos, no solo el suyo -- el firmware filtra por su propio
+# device_id dentro del payload antes de actuar. Así queda el bloque que agregar_gateway.sh
+# escribe para cada uno (ejemplo, no lo escribas a mano salvo que el script no esté disponible):
 #
 #   user ug56-agrohub1
 #   topic write ahub/device0001/data
+#   topic read  ahub/device0001/data
 #   topic write ahub/device0001/valvulas/state
+#   topic read  ahub/device0001/valvulas/state
 #   topic write ahub/device0001/config/state
+#   topic read  ahub/device0001/config/state
 #   topic write ahub/device0001/health
+#   topic read  ahub/device0001/health
 #   topic write ahub/device0001/status
+#   topic read  ahub/device0001/status
 #   topic read  ahub/+/control/valvulas
 #   topic read  ahub/+/config/set
 #   topic read  ahub/+/cloud/health
