@@ -3,6 +3,8 @@
 los nuevos) para que coincidan con la plantilla actualizada 2026-09-27:
 
   - agrega  `topic write ahub/<device_id>/config/state`      (tópico nuevo, faltaba)
+  - agrega  `topic read  ahub/<device_id>/config/state`      (mismo patrón "leer lo propio" que
+                                                                ya tienen data/valvulas/health/status)
   - agrega  `topic read  ahub/+/control/valvulas`             (ahora comodín, no por dispositivo)
   - agrega  `topic read  ahub/+/config/set`                   (tópico nuevo)
   - agrega  `topic read  ahub/+/cloud/health`                 (tópico nuevo, coexiste con
@@ -33,6 +35,7 @@ BLOQUE_RE = re.compile(
 
 LINEAS_NUEVAS_TEMPLATE = [
     "topic write ahub/{device_id}/config/state",
+    "topic read  ahub/{device_id}/config/state",
     "topic read  ahub/+/control/valvulas",
     "topic read  ahub/+/config/set",
     "topic read  ahub/+/cloud/health",
