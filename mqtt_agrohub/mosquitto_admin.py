@@ -23,6 +23,10 @@ class MosquittoAdminError(Exception):
 
 
 def _bloque_acl(client_id, device_id):
+    # Mismo bloque que mosquitto/agregar_gateway.sh escribe -- si cambia uno, cambia el otro.
+    # ahub/+/control/valvulas, ahub/+/config/set y ahub/+/cloud/health se suscriben con
+    # comodín real a propósito (cada gateway ve los comandos de TODOS los dispositivos, el
+    # firmware filtra por su propio device_id) -- ver docs/TOPICS.md.
     return (
         f"\n# --- {client_id} ({device_id}) ---\n"
         f"user {client_id}\n"
@@ -30,11 +34,15 @@ def _bloque_acl(client_id, device_id):
         f"topic read  ahub/{device_id}/data\n"
         f"topic write ahub/{device_id}/valvulas/state\n"
         f"topic read  ahub/{device_id}/valvulas/state\n"
+        f"topic write ahub/{device_id}/config/state\n"
+        f"topic read  ahub/{device_id}/config/state\n"
         f"topic write ahub/{device_id}/health\n"
         f"topic read  ahub/{device_id}/health\n"
         f"topic write ahub/{device_id}/status\n"
         f"topic read  ahub/{device_id}/status\n"
-        f"topic read  ahub/{device_id}/control/valvulas\n"
+        f"topic read  ahub/+/control/valvulas\n"
+        f"topic read  ahub/+/config/set\n"
+        f"topic read  ahub/+/cloud/health\n"
         f"topic read  iotunimagdalena/cloud/health\n"
     )
 
