@@ -16,6 +16,7 @@ instala el gateway.
 | `ahub/<id>/valvulas/state` | 1 | **sí** | `{ts, RO1, RO2, origen, ultimo_comando}`. `origen` ∈ `auto` (lógica local) / `remoto` (comando cloud) / `manual` (botón en el editor) / `reportado` (estado físico real informado por el uplink del LT-22222-L — es la fuente de verdad). |
 | `ahub/<id>/health` | 0 | no | `{mqtt_conectado, ultimo_uplink, valvulas, override_manual, modo_control, measured_by, measured_at}`. `modo_control` ∈ `nube` / `local`. Cada 60s. **No se respalda en microSD** — solo tiene valor en tiempo real, si se pierde no se reenvía. |
 | `ahub/<id>/status` | — | **sí** | `online` / `offline`, vía Last Will and Testament del broker. Si el gateway se cae, el broker publica `offline` automáticamente en ~22s (1.5 × keepalive de 15s). |
+| `ahub/<id>/config/state` | — | **sí** | **Payload pendiente de documentar** (agregado 2026-09-27, no viene en el manual UG56 original — confirmar con quien está probando el firmware nuevo). Presumiblemente el eco/confirmación de la configuración aplicada tras un `config/set` (ver abajo). |
 
 `measured_at` (o `ts` cuando no viene `measured_at`) es **siempre** el momento real de la
 medición — nunca el momento de llegada al broker. Con datos recuperados de la microSD esto
@@ -24,10 +25,19 @@ series de tiempo, nunca la hora de inserción en la base de datos.**
 
 ## Nosotros publicamos (el gateway se suscribe)
 
+**A partir de 2026-09-27, `control/valvulas` y `config/set` se suscriben con COMODÍN**
+(`ahub/+/...`, no `ahub/<id>/...`): cada gateway ve los comandos de TODOS los dispositivos, no
+solo el suyo — decisión de producto confirmada (el firmware filtra por su propio `device_id`
+dentro del payload antes de actuar), no un descuido de seguridad. `iotunimagdalena/cloud/health`
+sigue existiendo tal cual (no se toca); `ahub/+/cloud/health` es un latido nuevo que convive con
+el anterior, no lo reemplaza.
+
 | Tópico | QoS | Retenido | Payload |
 |---|---|---|---|
-| `ahub/<id>/control/valvulas` | 1 | no | `{"valvula": "RO1", "accion": "abrir"}`. Válvulas: `RO1`/`RO2` (también `1`/`2`). Acciones abrir: `abrir`/`open`/`on`/`encender`. Acciones cerrar: `cerrar`/`close`/`off`/`apagar`. Si el gateway está desconectado, el broker lo retiene (sesión persistente + QoS 1) y se entrega al reconectar — **puede ejecutarse con retraso**, evaluar vigencia si eso importa. |
-| `iotunimagdalena/cloud/health` | 0 | **NUNCA** | Nuestro latido, cada 60s. Mientras llegue (ventana de 3 min) y haya conexión, el gateway deja el control de riego en manos de la nube. Si deja de llegar, el gateway pasa a control local automáticamente. **Jamás publicar con `retain=True`** — un latido retenido engañaría al gateway tras una reconexión real. |
+| `ahub/<id>/control/valvulas` (suscripción real: `ahub/+/control/valvulas`) | 1 | no | `{"valvula": "RO1", "accion": "abrir"}`. Válvulas: `RO1`/`RO2` (también `1`/`2`). Acciones abrir: `abrir`/`open`/`on`/`encender`. Acciones cerrar: `cerrar`/`close`/`off`/`apagar`. Si el gateway está desconectado, el broker lo retiene (sesión persistente + QoS 1) y se entrega al reconectar — **puede ejecutarse con retraso**, evaluar vigencia si eso importa. |
+| `ahub/+/config/set` | — | **Payload pendiente de documentar** (agregado 2026-09-27). Presumiblemente configuración remota que el gateway aplica y confirma en `config/state`. |
+| `iotunimagdalena/cloud/health` | 0 | **NUNCA** | Nuestro latido histórico, cada 60s. Mientras llegue (ventana de 3 min) y haya conexión, el gateway deja el control de riego en manos de la nube. Si deja de llegar, el gateway pasa a control local automáticamente. **Jamás publicar con `retain=True`** — un latido retenido engañaría al gateway tras una reconexión real. |
+| `ahub/+/cloud/health` | — | — | **Payload pendiente de documentar** (agregado 2026-09-27). Latido nuevo, coexiste con `iotunimagdalena/cloud/health` -- no se sabe todavía si el gateway lo trata igual (failover a control local si deja de llegar) o es para otra cosa. |
 
 ## Jerarquía de control (para entender qué implica cada acción)
 
