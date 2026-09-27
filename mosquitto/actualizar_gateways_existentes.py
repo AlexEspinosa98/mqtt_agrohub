@@ -110,7 +110,7 @@ def main() -> None:
     ACL_FILE.write_text(actualizado)
     print(f"Actualizado: {ACL_FILE}")
 
-    subprocess.run(["systemctl", "reload", "mosquitto"], check=True)
+    subprocess.run(["sudo", "systemctl", "reload", "mosquitto"], check=True)
     print("Broker recargado (systemctl reload mosquitto).")
 
 
