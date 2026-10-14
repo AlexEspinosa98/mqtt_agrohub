@@ -1,3 +1,4 @@
+import json
 import os
 
 from dotenv import load_dotenv
@@ -36,6 +37,22 @@ TOPICS_SUSCRIPCION = [
     'ahub/+/health',
     'ahub/+/status',
 ]
+
+# --- Reenvío opcional a ThingsBoard (Energesis) — ver thingsboard.py. APAGADO por defecto. ---
+# Los tokens son credenciales: solo en .env, nunca en el código ni en el repo.
+THINGSBOARD_ENABLED = _env_bool('THINGSBOARD_ENABLED', False)
+THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'iot.energesis.tech')
+THINGSBOARD_PORT = int(os.environ.get('THINGSBOARD_PORT', '1884'))
+# El 1884 de Energesis no usa TLS (verificado el 2026-10): mientras no habiliten un puerto seguro, el token
+# viaja sin cifrar. Activar THINGSBOARD_USE_TLS=true apenas lo tengan.
+THINGSBOARD_USE_TLS = _env_bool('THINGSBOARD_USE_TLS', False)
+# Modo gateway: UN token de un dispositivo tipo "gateway" que recibe los 16 por nombre.
+THINGSBOARD_GATEWAY_TOKEN = os.environ.get('THINGSBOARD_GATEWAY_TOKEN') or None
+# Modo por dispositivo: JSON {"device0014": "<token>", ...}. Ignorado si hay token de gateway.
+try:
+    THINGSBOARD_TOKENS = json.loads(os.environ.get('THINGSBOARD_TOKENS') or '{}')
+except json.JSONDecodeError as exc:
+    raise RuntimeError(f'THINGSBOARD_TOKENS no es un JSON válido: {exc}') from exc
 
 # --- API de administración (ver api/) ---
 ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY')

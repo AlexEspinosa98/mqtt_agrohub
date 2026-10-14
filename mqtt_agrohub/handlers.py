@@ -4,7 +4,7 @@ detalle de cada payload. Cada handler recibe el device_id ya parseado y el paylo
 import json
 import logging
 
-from . import db
+from . import db, thingsboard
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,9 @@ def despachar(topic_info, raw_payload):
     db.registrar_dispositivo_visto(topic_info.device_id, topic_info.base_topic)
 
     if topic_info.subtopico == 'status':
-        manejar_status(topic_info.device_id, raw_payload.decode('utf-8', errors='replace'))
+        estado = raw_payload.decode('utf-8', errors='replace')
+        manejar_status(topic_info.device_id, estado)
+        thingsboard.reenviar(topic_info.device_id, 'status', estado)
         return
 
     try:
@@ -68,3 +70,7 @@ def despachar(topic_info, raw_payload):
         manejar_health(topic_info.device_id, payload)
     else:
         logger.warning('sub-tópico no reconocido: %s/%s', topic_info.base_topic, topic_info.subtopico)
+        return
+    # Copia a ThingsBoard (no-op si está apagado). Va DESPUÉS de guardar en nuestra base: nuestro
+    # registro es la fuente de verdad y nunca depende de que ThingsBoard responda.
+    thingsboard.reenviar(topic_info.device_id, topic_info.subtopico, payload)

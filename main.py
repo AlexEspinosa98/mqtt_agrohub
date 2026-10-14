@@ -2,7 +2,7 @@ import logging
 import signal
 import time
 
-from mqtt_agrohub import config
+from mqtt_agrohub import config, thingsboard
 from mqtt_agrohub.client import iniciar
 
 logging.basicConfig(
@@ -29,6 +29,7 @@ def main():
             time.sleep(1)
     finally:
         latido.detener()
+        thingsboard.detener()
         client.loop_stop()
         client.disconnect()
         logger.info('detenido limpiamente')

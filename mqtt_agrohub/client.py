@@ -3,7 +3,7 @@ import ssl
 
 import paho.mqtt.client as mqtt
 
-from . import config
+from . import config, thingsboard
 from .heartbeat import HiloLatido
 from .topics import parsear
 
@@ -60,6 +60,8 @@ def iniciar():
     client = construir_cliente()
     client.connect(config.MQTT_HOST, config.MQTT_PORT, keepalive=30)
     client.loop_start()
+
+    thingsboard.iniciar()
 
     latido = HiloLatido(client)
     latido.start()
