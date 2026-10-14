@@ -48,7 +48,8 @@ THINGSBOARD_PORT = int(os.environ.get('THINGSBOARD_PORT', '1884'))
 THINGSBOARD_USE_TLS = _env_bool('THINGSBOARD_USE_TLS', False)
 # Modo gateway: UN token de un dispositivo tipo "gateway" que recibe los 16 por nombre.
 THINGSBOARD_GATEWAY_TOKEN = os.environ.get('THINGSBOARD_GATEWAY_TOKEN') or None
-# Modo por dispositivo: JSON {"device0014": "<token>", ...}. Ignorado si hay token de gateway.
+# Respaldo estático por dispositivo (JSON {"device0014": "<token>"}). Lo normal es administrar los enlaces
+# desde la API (tabla enlaces_energesis); lo de la base manda sobre esto. Ignorado si hay token de gateway.
 try:
     THINGSBOARD_TOKENS = json.loads(os.environ.get('THINGSBOARD_TOKENS') or '{}')
 except json.JSONDecodeError as exc:

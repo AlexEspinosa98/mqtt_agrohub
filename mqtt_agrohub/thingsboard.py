@@ -6,11 +6,15 @@ el daemon ya recibe de los gateways. Nunca recibe comandos de allá, y un fallo 
 hilo aparte, y `reenviar()` jamás lanza ni bloquea.
 
 Dos modos, según qué credenciales entregue Energesis (ver config.py):
-  - por dispositivo: un token por gateway -> v1/devices/me/telemetry con {"ts":ms,"values":{...}}
-  - gateway: un solo token de dispositivo tipo "gateway" -> v1/gateway/telemetry con
-    {"device0014":[{"ts":ms,"values":{...}}]} (ThingsBoard crea/relaciona los dispositivos por nombre)
+  - por dispositivo (el normal): cada dispositivo NUESTRO se enlaza a uno de ThingsBoard con una fila
+    de la tabla `enlaces_energesis` (device0001 nuestro = token del device 1 de ellos), que se
+    administra desde la API del backend. Publica en v1/devices/me/telemetry {"ts":ms,"values":{...}}.
+    La tabla se relee cada 30 s: un enlace nuevo, cambiado, desactivado o borrado aplica sin
+    reiniciar. THINGSBOARD_TOKENS del .env sigue valiendo como respaldo (la base manda).
+  - gateway: un solo token de dispositivo tipo "gateway" en el .env -> v1/gateway/telemetry con
+    {"device0014":[{"ts":ms,"values":{...}}]} (ThingsBoard relaciona los dispositivos por nombre)
 
-Los tokens salen solo del entorno (.env), nunca del código ni del repo. El puerto 1884 de Energesis
+Los tokens salen de la base o del entorno, nunca del código ni del repo. El puerto 1884 de Energesis
 no usa TLS (verificado), así que el token viaja sin cifrar mientras no habiliten un puerto seguro.
 """
 import json
@@ -18,6 +22,7 @@ import logging
 import queue
 import ssl
 import threading
+import time
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
@@ -84,15 +89,30 @@ def aplanar(subtopico, payload):
     return _a_epoch_ms(payload), values
 
 
+REFRESCO_ENLACES_SEGUNDOS = 30
+
+
 class ReenviadorThingsBoard:
-    def __init__(self, host, port, usar_tls, tokens, token_gateway, maxsize=2000):
+    def __init__(self, host, port, usar_tls, tokens, token_gateway, maxsize=2000,
+                 fuente_tokens=None, registrar_estado=None, refresco=REFRESCO_ENLACES_SEGUNDOS):
+        """`tokens`: respaldo estático {device_id: token} (el .env). `fuente_tokens`: callable que
+        devuelve los enlaces vigentes {device_id: token} (la base); si da algo, pisa al respaldo.
+        `registrar_estado(device_id, ultimo_envio_en=None, error=None)`: deja en la base lo que
+        pasó con el envío. Ambos son opcionales para poder probar esto sin base de datos."""
         self._host = host
         self._port = port
         self._usar_tls = usar_tls
-        self._tokens = dict(tokens or {})
+        self._respaldo = dict(tokens or {})
+        self._tokens = dict(self._respaldo)
         self._token_gateway = token_gateway or None
+        self._fuente_tokens = fuente_tokens
+        self._registrar_estado = registrar_estado
+        self._refresco = refresco
         self._cola = queue.Queue(maxsize=maxsize)
         self._clientes = {}  # token -> cliente paho (uno por conexión)
+        self._ultimo_ok = {}      # device_id -> datetime del último PUBACK de ThingsBoard
+        self._ultimo_error = {}   # device_id -> texto del último fallo de conexión
+        self._pendientes_estado = set()
         self._detener = threading.Event()
         self._hilo = threading.Thread(target=self._bucle, name='thingsboard', daemon=True)
 
@@ -101,18 +121,55 @@ class ReenviadorThingsBoard:
         return 'gateway' if self._token_gateway else 'dispositivo'
 
     def iniciar(self):
+        self._refrescar_enlaces()
         self._hilo.start()
         logger.info(
-            'reenvío a ThingsBoard activo (%s:%s, modo %s, tls=%s)',
-            self._host, self._port, self.modo, self._usar_tls,
+            'reenvío a ThingsBoard activo (%s:%s, modo %s, tls=%s, %d dispositivos enlazados)',
+            self._host, self._port, self.modo, self._usar_tls, len(self._tokens),
         )
 
     def detener(self):
         self._detener.set()
         self._hilo.join(timeout=5)
-        for cliente in self._clientes.values():
+        self._volcar_estado()
+        for cliente in list(self._clientes.values()):
             cliente.loop_stop()
             cliente.disconnect()
+
+    def _refrescar_enlaces(self):
+        """Relee los enlaces de la base y cierra las conexiones de los que cambiaron o se fueron."""
+        if self._fuente_tokens is None or self._token_gateway:
+            return
+        try:
+            desde_base = self._fuente_tokens()
+        except Exception:
+            logger.exception('no se pudieron leer los enlaces con ThingsBoard — se conservan los anteriores')
+            return
+        nuevos = {**self._respaldo, **desde_base}
+        if nuevos == self._tokens:
+            return
+        en_uso = set(nuevos.values())
+        for token in [t for t in self._clientes if t not in en_uso]:
+            cliente = self._clientes.pop(token)
+            cliente.loop_stop()
+            cliente.disconnect()
+        logger.info('enlaces con ThingsBoard actualizados: %d dispositivos', len(nuevos))
+        self._tokens = nuevos
+
+    def _volcar_estado(self):
+        """Pasa a la base el último envío exitoso / error de cada dispositivo (para verlo en la API)."""
+        if self._registrar_estado is None:
+            return
+        for device_id in list(self._pendientes_estado):
+            self._pendientes_estado.discard(device_id)
+            try:
+                error = self._ultimo_error.get(device_id)
+                if error:
+                    self._registrar_estado(device_id, error=error)
+                elif device_id in self._ultimo_ok:
+                    self._registrar_estado(device_id, ultimo_envio_en=self._ultimo_ok[device_id])
+            except Exception:
+                logger.exception('no se pudo registrar el estado del envío de %s', device_id)
 
     def encolar(self, device_id, subtopico, payload):
         """Nunca bloquea ni lanza: con la cola llena descarta el mensaje y lo registra."""
@@ -121,22 +178,45 @@ class ReenviadorThingsBoard:
         except queue.Full:
             logger.warning('cola de ThingsBoard llena, se descarta un mensaje de %s/%s', device_id, subtopico)
 
-    def _cliente(self, token, client_id):
+    def _cliente(self, token, client_id, device_id=None):
         if token not in self._clientes:
-            cliente = mqtt.Client(client_id=client_id, clean_session=True)
+            cliente = mqtt.Client(client_id=client_id, clean_session=True, userdata=device_id)
             cliente.username_pw_set(token)  # ThingsBoard: el token va como usuario, sin contraseña
             if self._usar_tls:
                 cliente.tls_set(cert_reqs=ssl.CERT_REQUIRED)
             cliente.max_queued_messages_set(1000)
             cliente.reconnect_delay_set(min_delay=1, max_delay=60)
-            cliente.on_connect = lambda c, u, f, rc: (
-                logger.info('ThingsBoard conectado (%s)', client_id) if rc == 0
-                else logger.error('ThingsBoard rechazó la conexión de %s (rc=%s)', client_id, rc)
-            )
+            cliente.on_connect = self._on_connect
+            cliente.on_disconnect = self._on_disconnect
+            cliente.on_publish = self._on_publish
             cliente.connect_async(self._host, self._port, keepalive=30)
             cliente.loop_start()
             self._clientes[token] = cliente
         return self._clientes[token]
+
+    def _marcar(self, device_id, ok=None, error=None):
+        if device_id is None:
+            return
+        if ok is not None:
+            self._ultimo_ok[device_id] = ok
+            self._ultimo_error.pop(device_id, None)
+        if error is not None:
+            self._ultimo_error[device_id] = error
+        self._pendientes_estado.add(device_id)
+
+    def _on_connect(self, client, device_id, flags, rc):
+        if rc == 0:
+            logger.info('ThingsBoard conectado (%s)', device_id or 'gateway')
+        else:
+            logger.error('ThingsBoard rechazó la conexión de %s (rc=%s)', device_id or 'gateway', rc)
+            self._marcar(device_id, error=f'ThingsBoard rechazó la conexión (rc={rc}): revisa el token')
+
+    def _on_disconnect(self, client, device_id, rc):
+        if rc != 0:
+            self._marcar(device_id, error=f'conexión con ThingsBoard perdida (rc={rc})')
+
+    def _on_publish(self, client, device_id, mid):
+        self._marcar(device_id, ok=datetime.now(timezone.utc))
 
     def _publicar(self, device_id, subtopico, payload):
         ts, values = aplanar(subtopico, payload)
@@ -151,12 +231,17 @@ class ReenviadorThingsBoard:
             if not token:
                 logger.debug('sin token de ThingsBoard para %s, no se reenvía', device_id)
                 return
-            cliente = self._cliente(token, f'agrohub-thingsboard-{device_id}')
+            cliente = self._cliente(token, f'agrohub-thingsboard-{device_id}', device_id)
             topic, cuerpo = TOPIC_DISPOSITIVO, punto
         cliente.publish(topic, json.dumps(cuerpo, ensure_ascii=False), qos=1)
 
     def _bucle(self):
+        proximo_refresco = time.monotonic() + self._refresco
         while not self._detener.is_set():
+            if time.monotonic() >= proximo_refresco:
+                self._refrescar_enlaces()
+                self._volcar_estado()
+                proximo_refresco = time.monotonic() + self._refresco
             try:
                 device_id, subtopico, payload = self._cola.get(timeout=0.5)
             except queue.Empty:
@@ -171,16 +256,18 @@ _instancia = None
 
 
 def iniciar():
-    """Arranca el reenvío si THINGSBOARD_ENABLED=true y hay credenciales; si no, no hace nada."""
+    """Arranca el reenvío si THINGSBOARD_ENABLED=true. Los enlaces por dispositivo salen de la tabla
+    enlaces_energesis (administrada desde la API); puede arrancar sin ninguno y los toma cuando
+    se creen. Con token de gateway en el .env usa ese modo en su lugar."""
     global _instancia
     if not config.THINGSBOARD_ENABLED:
         return None
-    if not config.THINGSBOARD_GATEWAY_TOKEN and not config.THINGSBOARD_TOKENS:
-        logger.error('THINGSBOARD_ENABLED=true pero faltan THINGSBOARD_GATEWAY_TOKEN o THINGSBOARD_TOKENS — reenvío desactivado')
-        return None
+    from . import db
     _instancia = ReenviadorThingsBoard(
         config.THINGSBOARD_HOST, config.THINGSBOARD_PORT, config.THINGSBOARD_USE_TLS,
         config.THINGSBOARD_TOKENS, config.THINGSBOARD_GATEWAY_TOKEN,
+        fuente_tokens=db.listar_enlaces_energesis_activos,
+        registrar_estado=db.registrar_estado_envio_energesis,
     )
     _instancia.iniciar()
     return _instancia

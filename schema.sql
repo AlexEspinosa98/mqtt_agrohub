@@ -93,3 +93,19 @@ CREATE TABLE IF NOT EXISTS comandos_enviados (
     enviado_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
     payload_crudo     JSONB NOT NULL
 );
+
+-- Enlace con ThingsBoard/Energesis (ver migrations/0003_enlaces_energesis.sql).
+CREATE TABLE IF NOT EXISTS enlaces_energesis (
+    device_id          TEXT PRIMARY KEY REFERENCES dispositivos(device_id) ON DELETE CASCADE,
+    -- Credencial de ThingsBoard (se usa como usuario MQTT). Texto plano porque el daemon tiene que
+    -- presentarla tal cual; la API nunca la devuelve completa (solo enmascarada).
+    thingsboard_token  TEXT NOT NULL,
+    thingsboard_nombre TEXT,
+    activo             BOOLEAN NOT NULL DEFAULT TRUE,
+    creado_en          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    actualizado_en     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Lo escribe el daemon para que desde la API se vea si el enlace de verdad está funcionando.
+    ultimo_envio_en    TIMESTAMPTZ,
+    ultimo_error       TEXT,
+    ultimo_error_en    TIMESTAMPTZ
+);

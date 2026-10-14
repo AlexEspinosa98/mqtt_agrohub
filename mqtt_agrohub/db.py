@@ -253,3 +253,26 @@ def registrar_comando_enviado(device_id, valvula, accion, payload):
         """,
         (device_id, valvula, accion, json.dumps(payload)),
     )
+
+
+def listar_enlaces_energesis_activos():
+    """{device_id: token} de los enlaces activos con ThingsBoard/Energesis."""
+    filas = _consultar(
+        "SELECT device_id, thingsboard_token FROM enlaces_energesis WHERE activo AND thingsboard_token <> ''"
+    )
+    return {f['device_id']: f['thingsboard_token'] for f in filas}
+
+
+def registrar_estado_envio_energesis(device_id, ultimo_envio_en=None, error=None):
+    """Deja en la fila del enlace lo que pasó con el último reenvío, para verlo desde la API.
+    Un envío exitoso limpia el error; un error se guarda con su hora y no borra el último éxito."""
+    if error:
+        _ejecutar(
+            "UPDATE enlaces_energesis SET ultimo_error = %s, ultimo_error_en = now() WHERE device_id = %s",
+            (error[:500], device_id),
+        )
+    elif ultimo_envio_en is not None:
+        _ejecutar(
+            "UPDATE enlaces_energesis SET ultimo_envio_en = %s, ultimo_error = NULL WHERE device_id = %s",
+            (ultimo_envio_en, device_id),
+        )

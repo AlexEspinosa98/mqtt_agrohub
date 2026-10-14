@@ -137,6 +137,61 @@ class TestIntegracionBrokerFalso(unittest.TestCase):
         finally:
             r.detener()
 
+    def test_enlaces_de_la_base_se_aplican_y_registran_estado(self):
+        self.recibidos.clear()
+        enlaces = {'device0001': 'TOKEN_FALSO_1'}
+        estados = []
+        r = thingsboard.ReenviadorThingsBoard(
+            '127.0.0.1', PUERTO, False, {}, None,
+            fuente_tokens=lambda: dict(enlaces),
+            registrar_estado=lambda d, ultimo_envio_en=None, error=None: estados.append((d, ultimo_envio_en, error)),
+            refresco=1,
+        )
+        r.iniciar()
+        try:
+            r.encolar('device0001', 'data', {'ts': '2026-10-04T16:02:38.218Z', 'temperatura': 20})
+            r.encolar('device0002', 'data', {'temperatura': 21})  # aún sin enlace
+            self._esperar(1)
+            self.assertEqual(len(self.recibidos), 1)
+            # se crea el enlace de device0002 y se cambia el token de device0001, sin reiniciar
+            enlaces['device0002'] = 'TOKEN_FALSO_2'
+            enlaces['device0001'] = 'TOKEN_FALSO_1B'
+            time.sleep(1.6)
+            self.recibidos.clear()
+            r.encolar('device0001', 'data', {'temperatura': 22})
+            r.encolar('device0002', 'data', {'temperatura': 23})
+            self._esperar(2)
+            self.assertEqual(len(self.recibidos), 2)
+            self.assertNotIn('TOKEN_FALSO_1', r._clientes)
+            self.assertIn('TOKEN_FALSO_1B', r._clientes)
+            time.sleep(1.6)
+            self.assertTrue(any(d == 'device0001' and ok is not None for d, ok, _ in estados))
+            self.assertTrue(any(d == 'device0002' and ok is not None for d, ok, _ in estados))
+        finally:
+            r.detener()
+
+    def test_enlace_desactivado_deja_de_reenviar(self):
+        self.recibidos.clear()
+        enlaces = {'device0001': 'TOKEN_FALSO_1'}
+        r = thingsboard.ReenviadorThingsBoard('127.0.0.1', PUERTO, False, {}, None,
+                                              fuente_tokens=lambda: dict(enlaces), refresco=1)
+        r.iniciar()
+        try:
+            enlaces.clear()
+            time.sleep(1.6)
+            r.encolar('device0001', 'data', {'temperatura': 20})
+            time.sleep(1.0)
+            self.assertEqual(self.recibidos, [])
+        finally:
+            r.detener()
+
+    def test_fallo_al_leer_la_base_conserva_enlaces(self):
+        def rota():
+            raise RuntimeError('base caída')
+        r = thingsboard.ReenviadorThingsBoard('localhost', 1, False, {'d': 't'}, None, fuente_tokens=rota)
+        r._refrescar_enlaces()
+        self.assertEqual(r._tokens, {'d': 't'})
+
     def test_thingsboard_caido_no_bloquea_ni_lanza(self):
         r = thingsboard.ReenviadorThingsBoard('127.0.0.1', 1, False, {'device0014': 'T'}, None)  # puerto sin servicio
         r.iniciar()
