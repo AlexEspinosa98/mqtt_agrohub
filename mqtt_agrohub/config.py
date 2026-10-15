@@ -42,6 +42,9 @@ TOPICS_SUSCRIPCION = [
 # Los tokens son credenciales: solo en .env, nunca en el código ni en el repo.
 THINGSBOARD_ENABLED = _env_bool('THINGSBOARD_ENABLED', False)
 THINGSBOARD_HOST = os.environ.get('THINGSBOARD_HOST', 'iot.energesis.tech')
+# Transporte: 'mqtt' (puerto 1884, sin cifrar) o 'http' (la API REST de ThingsBoard por HTTPS, que es la que
+# Energesis ya mostró funcionando: https://iot.energesis.tech/api/v1/<token>/telemetry -> puerto 443).
+THINGSBOARD_TRANSPORT = os.environ.get('THINGSBOARD_TRANSPORT', 'mqtt').lower()
 THINGSBOARD_PORT = int(os.environ.get('THINGSBOARD_PORT', '1884'))
 # El 1884 de Energesis no usa TLS (verificado el 2026-10): mientras no habiliten un puerto seguro, el token
 # viaja sin cifrar. Activar THINGSBOARD_USE_TLS=true apenas lo tengan.

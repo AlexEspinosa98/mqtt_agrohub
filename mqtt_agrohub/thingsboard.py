@@ -23,6 +23,8 @@ import queue
 import ssl
 import threading
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
@@ -94,7 +96,8 @@ REFRESCO_ENLACES_SEGUNDOS = 30
 
 class ReenviadorThingsBoard:
     def __init__(self, host, port, usar_tls, tokens, token_gateway, maxsize=2000,
-                 fuente_tokens=None, registrar_estado=None, refresco=REFRESCO_ENLACES_SEGUNDOS):
+                 fuente_tokens=None, registrar_estado=None, refresco=REFRESCO_ENLACES_SEGUNDOS,
+                 transporte='mqtt'):
         """`tokens`: respaldo estático {device_id: token} (el .env). `fuente_tokens`: callable que
         devuelve los enlaces vigentes {device_id: token} (la base); si da algo, pisa al respaldo.
         `registrar_estado(device_id, ultimo_envio_en=None, error=None)`: deja en la base lo que
@@ -108,6 +111,7 @@ class ReenviadorThingsBoard:
         self._fuente_tokens = fuente_tokens
         self._registrar_estado = registrar_estado
         self._refresco = refresco
+        self._http = transporte == 'http' and not token_gateway  # HTTP(S): solo modo por dispositivo
         self._cola = queue.Queue(maxsize=maxsize)
         self._clientes = {}  # token -> cliente paho (uno por conexión)
         self._ultimo_ok = {}      # device_id -> datetime del último PUBACK de ThingsBoard
@@ -125,7 +129,7 @@ class ReenviadorThingsBoard:
         self._hilo.start()
         logger.info(
             'reenvío a ThingsBoard activo (%s:%s, modo %s, tls=%s, %d dispositivos enlazados)',
-            self._host, self._port, self.modo, self._usar_tls, len(self._tokens),
+            self._host, self._port, 'http' if self._http else self.modo, self._usar_tls, len(self._tokens),
         )
 
     def detener(self):
@@ -223,6 +227,11 @@ class ReenviadorThingsBoard:
         if not values:
             return
         punto = {'ts': ts, 'values': values}
+        if self._http:
+            token = self._tokens.get(device_id)
+            if token:
+                self._publicar_http(device_id, token, punto)
+            return
         if self._token_gateway:
             cliente = self._cliente(self._token_gateway, 'agrohub-thingsboard-gateway')
             topic, cuerpo = TOPIC_GATEWAY, {device_id: [punto]}
@@ -234,6 +243,22 @@ class ReenviadorThingsBoard:
             cliente = self._cliente(token, f'agrohub-thingsboard-{device_id}', device_id)
             topic, cuerpo = TOPIC_DISPOSITIVO, punto
         cliente.publish(topic, json.dumps(cuerpo, ensure_ascii=False), qos=1)
+
+    def _publicar_http(self, device_id, token, punto):
+        """POST https://host[:puerto]/api/v1/<token>/telemetry — la API HTTP de ThingsBoard, que en
+        Energesis va por HTTPS (a diferencia de su MQTT en el 1884, sin cifrar)."""
+        esquema = 'https' if self._usar_tls else 'http'
+        url = f'{esquema}://{self._host}:{self._port}/api/v1/{token}/telemetry'
+        req = urllib.request.Request(url, data=json.dumps(punto, ensure_ascii=False).encode(),
+                                     headers={'Content-Type': 'application/json'}, method='POST')
+        try:
+            with urllib.request.urlopen(req, timeout=10):
+                pass
+            self._marcar(device_id, ok=datetime.now(timezone.utc))
+        except urllib.error.HTTPError as exc:
+            self._marcar(device_id, error=f'ThingsBoard respondió HTTP {exc.code}' + (' (token inválido)' if exc.code in (401, 404) else ''))
+        except (urllib.error.URLError, OSError) as exc:
+            self._marcar(device_id, error=f'no se pudo contactar a ThingsBoard: {exc}')
 
     def _bucle(self):
         proximo_refresco = time.monotonic() + self._refresco
@@ -266,6 +291,7 @@ def iniciar():
     _instancia = ReenviadorThingsBoard(
         config.THINGSBOARD_HOST, config.THINGSBOARD_PORT, config.THINGSBOARD_USE_TLS,
         config.THINGSBOARD_TOKENS, config.THINGSBOARD_GATEWAY_TOKEN,
+        transporte=config.THINGSBOARD_TRANSPORT,
         fuente_tokens=db.listar_enlaces_energesis_activos,
         registrar_estado=db.registrar_estado_envio_energesis,
     )

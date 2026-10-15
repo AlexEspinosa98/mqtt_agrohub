@@ -60,3 +60,12 @@ El `ts` es el `measured_at` (o `ts`) del gateway, en milisegundos; sin fecha uti
 
 `venv/bin/python -m unittest tests.test_thingsboard` — usa un Mosquitto **local** que imita a ThingsBoard
 (se salta si no hay `mosquitto`); nunca habla con Energesis ni usa tokens reales.
+
+## Transporte HTTPS (recomendado) y enlaces desde la API
+
+- `THINGSBOARD_TRANSPORT=http` + `THINGSBOARD_PORT=443` + `THINGSBOARD_USE_TLS=true`: cada medición se manda con
+  `POST https://iot.energesis.tech/api/v1/<token>/telemetry` (cuerpo `{"ts":ms,"values":{...}}`). Es cifrado y
+  evita el 1884 sin TLS. Solo modo por dispositivo.
+- Los enlaces dispositivo nuestro ↔ dispositivo de Energesis viven en la tabla `enlaces_energesis` y se administran
+  por la API del backend (`/riego-iot/dispositivos/{id}/energesis/`, `.../probar/`, `/riego-iot/energesis/`).
+- Para enlazar varios de una vez: `scripts/enlazar_energesis.sh`.

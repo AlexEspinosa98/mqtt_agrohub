@@ -63,6 +63,35 @@ class TestAplanar(unittest.TestCase):
         self.assertLess(abs(b - ahora), 5000)
 
 
+class TestTransporteHttp(unittest.TestCase):
+    def test_http_publica_en_api_v1_token_telemetry_y_registra_estado(self):
+        import http.server
+        recibido = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                recibido.append((self.path, json.loads(self.rfile.read(int(self.headers['Content-Length'])))))
+                self.send_response(200 if 'BUENO' in self.path else 401)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(('127.0.0.1', 18885), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            r = thingsboard.ReenviadorThingsBoard('127.0.0.1', 18885, False, {'d1': 'TOKEN_BUENO', 'd2': 'TOKEN_MALO'}, None,
+                                                  transporte='http')
+            r._publicar('d1', 'data', {'ts': '2026-10-04T16:02:38.218Z', 'zona': 'z3', 'humedad_suelo': 34.46})
+            r._publicar('d2', 'data', {'temperatura': 5})
+            self.assertEqual(recibido[0], ('/api/v1/TOKEN_BUENO/telemetry',
+                                           {'ts': 1791129758218, 'values': {'z3_humedad_suelo': 34.46}}))
+            self.assertIn('d1', r._ultimo_ok)
+            self.assertIn('401', r._ultimo_error['d2'])
+        finally:
+            srv.shutdown()
+
+
 class TestApagado(unittest.TestCase):
     def test_reenviar_apagado_es_noop(self):
         thingsboard._instancia = None
