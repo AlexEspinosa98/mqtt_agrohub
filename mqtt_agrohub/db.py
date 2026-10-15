@@ -217,6 +217,12 @@ def insertar_estado_valvula(device_id, payload):
     )
 
 
+def _escalar(valor):
+    """Las columnas escalares de healthchecks no admiten dict/list (psycopg2: "can't adapt type 'dict'").
+    El payload completo se conserva igual en payload_crudo."""
+    return None if isinstance(valor, (dict, list)) else valor
+
+
 def insertar_healthcheck(device_id, payload):
     _ejecutar(
         """
@@ -227,11 +233,11 @@ def insertar_healthcheck(device_id, payload):
         """,
         (
             device_id,
-            payload.get('measured_at') or payload.get('ts'),
-            payload.get('mqtt_conectado'),
-            payload.get('ultimo_uplink'),
-            payload.get('modo_control'),
-            payload.get('override_manual'),
+            _escalar(payload.get('measured_at') or payload.get('ts')),
+            _escalar(payload.get('mqtt_conectado')),
+            _escalar(payload.get('ultimo_uplink')),
+            _escalar(payload.get('modo_control')),
+            _escalar(payload.get('override_manual')),
             json.dumps(payload.get('valvulas')) if payload.get('valvulas') is not None else None,
             json.dumps(payload),
         ),

@@ -62,15 +62,17 @@ def despachar(topic_info, raw_payload):
         logger.error('payload no es JSON válido en %s/%s: %r', topic_info.base_topic, topic_info.subtopico, raw_payload[:200])
         return
 
-    if topic_info.subtopico == 'data':
-        manejar_data(topic_info.device_id, payload)
-    elif topic_info.subtopico == 'valvulas/state':
-        manejar_valvulas_state(topic_info.device_id, payload)
-    elif topic_info.subtopico == 'health':
-        manejar_health(topic_info.device_id, payload)
-    else:
+    if topic_info.subtopico not in ('data', 'valvulas/state', 'health'):
         logger.warning('sub-tópico no reconocido: %s/%s', topic_info.base_topic, topic_info.subtopico)
         return
-    # Copia a ThingsBoard (no-op si está apagado). Va DESPUÉS de guardar en nuestra base: nuestro
-    # registro es la fuente de verdad y nunca depende de que ThingsBoard responda.
-    thingsboard.reenviar(topic_info.device_id, topic_info.subtopico, payload)
+    try:
+        if topic_info.subtopico == 'data':
+            manejar_data(topic_info.device_id, payload)
+        elif topic_info.subtopico == 'valvulas/state':
+            manejar_valvulas_state(topic_info.device_id, payload)
+        else:
+            manejar_health(topic_info.device_id, payload)
+    finally:
+        # Copia a ThingsBoard (no-op si está apagado). Va después de intentar guardar, y aunque el guardado
+        # falle: el reenvío es independiente y nunca lanza.
+        thingsboard.reenviar(topic_info.device_id, topic_info.subtopico, payload)
